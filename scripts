@@ -1,0 +1,2054 @@
+using UnityEngine;
+
+public class CombatSystem : MonoBehaviour
+{
+    private const float TICK_RATE = 1.0f; // The time interval for each tick (in seconds)
+    private float tickTimer = 0.0f; // Timer for tracking the current tick
+
+    [Header("References")]
+    public PlayerCharacter playerCharacter; // Reference to the PlayerCharacter script
+    public UIManager uiManager; // Reference to the UIManager script
+
+    private Enemy currentEnemy; // Reference to the current enemy in combat
+
+    private bool isCombatActive = false; // Flag to check if combat is active
+
+    private void Update()
+    {
+        if (isCombatActive)
+        {
+            // Increment the tick timer
+            tickTimer += Time.deltaTime;
+
+            // Check if it's time for a new tick
+            if (tickTimer >= TICK_RATE)
+            {
+                // Perform combat actions for player and enemy
+                PerformPlayerAction();
+                PerformEnemyAction();
+
+                // Update the UI to show health and combat stats
+                UpdateUI();
+
+                // Reset the tick timer
+                tickTimer -= TICK_RATE;
+            }
+        }
+    }
+
+    public void StartCombat(Enemy enemy)
+    {
+        // Start combat with the given enemy
+        currentEnemy = enemy;
+        isCombatActive = true;
+    }
+
+    private void PerformPlayerAction()
+    {
+        // Calculate player's attack damage and apply it to the enemy
+        int attackDamage = CalculateAttackDamage(playerCharacter.GetAttackBonus(), currentEnemy.GetDefenseBonus());
+        currentEnemy.TakeDamage(attackDamage);
+
+        // Check if the enemy is defeated
+        if (currentEnemy.IsDefeated())
+        {
+            EndCombat(true);
+        }
+    }
+
+    private void PerformEnemyAction()
+    {
+        // Calculate enemy's attack damage and apply it to the player
+        int attackDamage = CalculateAttackDamage(currentEnemy.GetAttackBonus(), playerCharacter.GetDefenseBonus());
+        playerCharacter.TakeDamage(attackDamage);
+
+        // Check if the player is defeated
+        if (playerCharacter.IsDefeated())
+        {
+            EndCombat(false);
+        }
+    }
+
+    private int CalculateAttackDamage(int attackerBonus, int defenderBonus)
+    {
+        // Calculate attack damage using the combat formula (similar to RuneScape 2007)
+        // You can modify this formula to fit your game's combat mechanics
+        int maxDamage = 10; // Modify this value based on your game's balance
+        int damage = Random.Range(0, maxDamage) + attackerBonus - defenderBonus;
+
+        return Mathf.Max(0, damage); // Ensure damage is non-negative
+    }
+
+    private void EndCombat(bool isPlayerVictorious)
+    {
+        // Handle the end of combat based on whether the player is victorious or not
+        if (isPlayerVictorious)
+        {
+            // Handle victory (e.g., gain experience, loot, etc.)
+            Debug.Log("You defeated the enemy!");
+        }
+        else
+        {
+            // Handle defeat (e.g., respawn, drop items, etc.)
+            Debug.Log("You were defeated!");
+        }
+
+        // Reset combat-related variables
+        isCombatActive = false;
+        currentEnemy = null;
+        tickTimer = 0f;
+    }
+
+    private void UpdateUI()
+    {
+        // Update the UI to display player and enemy health, combat stats, etc.
+        uiManager.UpdatePlayerHealth(playerCharacter.GetCurrentHealth(), playerCharacter.GetMaxHealth());
+        uiManager.UpdatePlayerCombatStats(playerCharacter.GetAttackBonus(), playerCharacter.GetDefenseBonus());
+
+        if (currentEnemy != null)
+        {
+            uiManager.UpdateEnemyHealth(currentEnemy.GetCurrentHealth(), currentEnemy.GetMaxHealth());
+            uiManager.UpdateEnemyCombatStats(currentEnemy.GetAttackBonus(), currentEnemy.GetDefenseBonus());
+        }
+    }
+}
+using System.Collections.Generic;
+using UnityEngine;
+
+[CreateAssetMenu(fileName = "New Crafting Recipe", menuName = "Crafting Recipe")]
+public class CraftingRecipeSO : ScriptableObject
+{
+    public List<Item> inputItems;
+    public List<int> inputAmounts;
+    public Item outputItem;
+    public int outputAmount;
+    public int requiredSkillLevel;
+    public float craftingTime; // Time taken to craft the item in seconds
+}
+using System.Collections.Generic;
+using UnityEngine;
+
+public class CraftingSystem : MonoBehaviour
+{
+    [System.Serializable]
+    public class CraftingRecipe
+    {
+        public List<Item> inputItems;
+        public int[] inputAmounts;
+        public Item outputItem;
+        public int outputAmount;
+        public int requiredSkillLevel;
+    }
+
+    // List to store crafting recipes.
+    public List<CraftingRecipe> craftingRecipes;
+
+    // Reference to the InventorySystem script to manage the player's inventory.
+    private InventorySystem inventorySystem;
+
+    // Reference to the UIManager script to display crafting-related UI elements.
+    private UIManager uiManager;
+
+    // Reference to the PlayerData script to access player skill levels.
+    private PlayerData playerData;
+
+    // Initialize the crafting system.
+    private void Start()
+    {
+        // Get the references to the InventorySystem, UIManager, and PlayerData scripts.
+        inventorySystem = GetComponent<InventorySystem>();
+        uiManager = GetComponent<UIManager>();
+        playerData = GetComponent<PlayerData>();
+    }
+
+    // Craft an item based on the given output item ID.
+    public void CraftItem(int outputItemID)
+    {
+        // Find the crafting recipe for the given output item ID.
+        CraftingRecipe recipe = craftingRecipes.Find(x => x.outputItem.itemID == outputItemID);
+
+        if (recipe != null)
+        {
+            // Check if the player meets the required skill level.
+            if (playerData.GetSkillLevel("Runecrafting") >= recipe.requiredSkillLevel)
+            {
+                // Check if the player has the required input items and amounts.
+                if (HasRequiredInputItems(recipe))
+                {
+                    // Deduct the required input items from the player's inventory.
+                    DeductInputItems(recipe);
+
+                    // Add the crafted item to the player's inventory.
+                    inventorySystem.AddItemToInventory(recipe.outputItem.itemID, recipe.outputAmount);
+
+                    // Show a success message in the UI.
+                    uiManager.ShowMessage("Crafting successful!");
+                }
+                else
+                {
+                    // Show an error message in the UI indicating that the player doesn't have the required input items.
+                    uiManager.ShowMessage("You don't have enough materials to craft this item.");
+                }
+            }
+            else
+            {
+                // Show an error message in the UI indicating that the player doesn't meet the required skill level.
+                uiManager.ShowMessage("You need a higher Runecrafting level to craft this item.");
+            }
+        }
+        else
+        {
+            // Show an error message in the UI indicating that the crafting recipe doesn't exist.
+            uiManager.ShowMessage("Crafting recipe not found.");
+        }
+    }
+
+    // Check if the player has the required input items and amounts for a crafting recipe.
+    private bool HasRequiredInputItems(CraftingRecipe recipe)
+    {
+        // Check if the player has the required input items and amounts.
+        for (int i = 0; i < recipe.inputItems.Count; i++)
+        {
+            if (!inventorySystem.HasItem(recipe.inputItems[i].itemID, recipe.inputAmounts[i]))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Deduct the required input items from the player's inventory.
+    private void DeductInputItems(CraftingRecipe recipe)
+    {
+        // Deduct the required input items from the player's inventory.
+        for (int i = 0; i < recipe.inputItems.Count; i++)
+        {
+            inventorySystem.RemoveItemFromInventory(recipe.inputItems[i].itemID, recipe.inputAmounts[i]);
+        }
+    }
+}
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class DungeonManager : MonoBehaviour
+{
+    public Text dungeonInfoText;
+    public Button exploreButton;
+
+    [Header("Dungeon Settings")]
+    public string dungeonName = "Dark Cave";
+    public int maxDungeonLevel = 10;
+
+    [Header("Enemy Encounters")]
+    public List<Enemy> enemies;
+    public List<Item> dungeonLoot;
+
+    private int currentDungeonLevel;
+    private bool isExploring;
+
+    private void Start()
+    {
+        currentDungeonLevel = 1;
+        isExploring = false;
+
+        UpdateDungeonInfo();
+    }
+
+    private void UpdateDungeonInfo()
+    {
+        dungeonInfoText.text = "Dungeon: " + dungeonName + "\nLevel: " + currentDungeonLevel;
+
+        if (isExploring)
+        {
+            exploreButton.interactable = false;
+            dungeonInfoText.text += "\nExploring...";
+        }
+        else
+        {
+            exploreButton.interactable = true;
+            dungeonInfoText.text += "\nReady to Explore!";
+        }
+    }
+
+    public void ExploreDungeon()
+    {
+        if (!isExploring)
+        {
+            StartCoroutine(ExploreDungeonCoroutine());
+        }
+    }
+
+    private IEnumerator ExploreDungeonCoroutine()
+    {
+        isExploring = true;
+        UpdateDungeonInfo();
+
+        yield return new WaitForSeconds(2f); // Simulating dungeon exploration time (replace with your actual mechanic)
+
+        // Randomly select an enemy encounter
+        int randomEnemyIndex = Random.Range(0, enemies.Count);
+        Enemy enemy = enemies[randomEnemyIndex];
+
+        // Simulating combat with the enemy
+        bool playerWins = CombatWithEnemy(enemy);
+
+        if (playerWins)
+        {
+            // Player wins, give loot
+            int randomLootIndex = Random.Range(0, dungeonLoot.Count);
+            Item loot = dungeonLoot[randomLootIndex];
+            PlayerInventory.Instance.AddItem(loot);
+
+            dungeonInfoText.text += "\nYou defeated " + enemy.Name + " and found: " + loot.ItemName;
+        }
+        else
+        {
+            // Player loses, handle game over
+            dungeonInfoText.text += "\nYou were defeated by " + enemy.Name + ". Game Over.";
+            GameManager.Instance.GameOver();
+        }
+
+        currentDungeonLevel++;
+        isExploring = false;
+        UpdateDungeonInfo();
+    }
+
+    private bool CombatWithEnemy(Enemy enemy)
+    {
+        // Implement your combat mechanics here using the enemy's stats and player's stats
+        // Return true if player wins, false if player loses
+        // You can use the combat system you implemented earlier
+        // For simplicity, let's assume the player always wins for now
+        return true;
+    }
+}
+
+[System.Serializable]
+public class Enemy
+{
+    public string Name;
+    public int MaxHealth;
+    public int Attack;
+    public int Defense;
+
+    public Enemy(string name, int maxHealth, int attack, int defense)
+    {
+        Name = name;
+        MaxHealth = maxHealth;
+        Attack = attack;
+        Defense = defense;
+    }
+}
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+public class GameManager : MonoBehaviour
+{
+    // Reference to the PlayerData script
+    private PlayerData playerData;
+
+    // Game States
+    private enum GameState
+    {
+        MainMenu,
+        CharacterSelection,
+        Gameplay,
+        GameOver
+    }
+    private GameState gameState;
+
+    // Reference to the UIManager for updating UI elements
+    private UIManager uiManager;
+
+    // Reference to the QuestManager for quest-related logic
+    private QuestSystem questSystem;
+
+    private void Start()
+    {
+        // Get references to UIManager and QuestManager
+        uiManager = GetComponent<UIManager>();
+        questSystem = GetComponent<QuestSystem>();
+
+        // Initialize the game state to Main Menu
+        gameState = GameState.MainMenu;
+
+        // Load player data (if any)
+        LoadGame();
+    }
+
+    private void Update()
+    {
+        // Check game state and handle related logic
+        switch (gameState)
+        {
+            case GameState.MainMenu:
+                // Handle main menu logic
+                // ...
+                break;
+
+            case GameState.CharacterSelection:
+                // Handle character selection logic
+                // ...
+                break;
+
+            case GameState.Gameplay:
+                // Handle gameplay logic
+                // ...
+                break;
+
+            case GameState.GameOver:
+                // Handle game over logic
+                // ...
+                break;
+        }
+    }
+
+    // Scene Switching
+    public void LoadMainMenuScene()
+    {
+        SceneManager.LoadScene("MainMenu");
+        gameState = GameState.MainMenu;
+    }
+
+    public void LoadCharacterSelectionScene()
+    {
+        SceneManager.LoadScene("CharacterSelection");
+        gameState = GameState.CharacterSelection;
+    }
+
+    public void LoadGameplayScene()
+    {
+        SceneManager.LoadScene("Gameplay");
+        gameState = GameState.Gameplay;
+    }
+
+    // Player Data Management
+    public void SetPlayerData(PlayerData playerData)
+    {
+        this.playerData = playerData;
+    }
+
+    public PlayerData GetPlayerData()
+    {
+        return playerData;
+    }
+
+    // Game State Handling
+    public void StartGame()
+    {
+        LoadGameplayScene();
+        // Additional game initialization logic
+        // ...
+    }
+
+    public void PauseGame()
+    {
+        Time.timeScale = 0f;
+        // Additional pause logic (if needed)
+        // ...
+    }
+
+    public void ResumeGame()
+    {
+        Time.timeScale = 1f;
+        // Additional resume logic (if needed)
+        // ...
+    }
+
+    public void EndGame()
+    {
+        // Handle game over conditions and display appropriate messages
+        // ...
+        gameState = GameState.GameOver;
+    }
+
+    // Saving and Loading
+    public void SaveGame()
+    {
+        if (playerData != null)
+        {
+            playerData.SavePlayerData();
+        }
+    }
+
+    public void LoadGame()
+    {
+        if (playerData != null)
+        {
+            playerData.LoadPlayerData();
+        }
+    }
+
+    // Quest Progression
+    public void StartQuest(int questID)
+    {
+        if (questSystem != null)
+        {
+            questSystem.StartQuest(questID);
+        }
+    }
+
+    public void CompleteQuest(int questID)
+    {
+        if (questSystem != null)
+        {
+            questSystem.CompleteQuest(questID);
+        }
+    }
+
+    // UI Updates
+    public void UpdateHealthBar(float currentHealth, float maxHealth)
+    {
+        if (uiManager != null)
+        {
+            uiManager.UpdateHealthBar(currentHealth, maxHealth);
+        }
+    }
+
+    public void UpdateQuestStatus(string questName, string statusText)
+    {
+        if (uiManager != null)
+        {
+            uiManager.UpdateQuestStatus(questName, statusText);
+        }
+    }
+
+    // Other Game Logic (Add more as needed)
+    // ...
+
+}
+using UnityEngine;
+
+[System.Serializable]
+public class CombatStats
+{
+    public int stabBonus;
+    public int crushBonus;
+    public int slashBonus;
+}
+
+public class GearSystem : MonoBehaviour
+{
+    // Define gear slots
+    public Item helmetSlot;
+    public Item platebodySlot;
+    public Item platelegsSlot;
+    public Item glovesSlot;
+    public Item bootsSlot;
+    public Item capeSlot;
+    public Item amuletSlot;
+    public Item weaponSlot;
+
+    // Equipping gear
+    public void EquipItem(Item item)
+    {
+        // Determine the item type and equip it to the appropriate slot
+        switch (item.itemType)
+        {
+            case ItemType.Helmet:
+                helmetSlot = item;
+                break;
+            case ItemType.Platebody:
+                platebodySlot = item;
+                break;
+            case ItemType.Platelegs:
+                platelegsSlot = item;
+                break;
+            case ItemType.Gloves:
+                glovesSlot = item;
+                break;
+            case ItemType.Boots:
+                bootsSlot = item;
+                break;
+            case ItemType.Cape:
+                capeSlot = item;
+                break;
+            case ItemType.Amulet:
+                amuletSlot = item;
+                break;
+            case ItemType.Weapon:
+                weaponSlot = item;
+                break;
+            // Add more cases for other gear types, if applicable
+            default:
+                Debug.LogWarning("Unsupported gear type!");
+                break;
+        }
+
+        // ... (Any additional functionality related to equipping gear)
+    }
+
+    // Unequipping gear
+    public void UnequipItem(Item item)
+    {
+        // Determine the item type and unequip it from the appropriate slot
+        switch (item.itemType)
+        {
+            case ItemType.Helmet:
+                helmetSlot = null;
+                break;
+            case ItemType.Platebody:
+                platebodySlot = null;
+                break;
+            case ItemType.Platelegs:
+                platelegsSlot = null;
+                break;
+            case ItemType.Gloves:
+                glovesSlot = null;
+                break;
+            case ItemType.Boots:
+                bootsSlot = null;
+                break;
+            case ItemType.Cape:
+                capeSlot = null;
+                break;
+            case ItemType.Amulet:
+                amuletSlot = null;
+                break;
+            case ItemType.Weapon:
+                weaponSlot = null;
+                break;
+            // Add more cases for other gear types, if applicable
+            default:
+                Debug.LogWarning("Unsupported gear type!");
+                break;
+        }
+
+        // ... (Any additional functionality related to unequipping gear)
+    }
+
+    // Calculate total combat stats based on equipped gear
+    public CombatStats CalculateTotalStats()
+    {
+        CombatStats totalStats = new CombatStats();
+
+        // Add stats from helmet
+        if (helmetSlot != null)
+        {
+            totalStats.stabBonus += helmetSlot.stabBonus;
+            totalStats.crushBonus += helmetSlot.crushBonus;
+            totalStats.slashBonus += helmetSlot.slashBonus;
+        }
+
+        // Add stats from platebody
+        if (platebodySlot != null)
+        {
+            totalStats.stabBonus += platebodySlot.stabBonus;
+            totalStats.crushBonus += platebodySlot.crushBonus;
+            totalStats.slashBonus += platebodySlot.slashBonus;
+        }
+
+        // Add stats from platelegs
+        if (platelegsSlot != null)
+        {
+            totalStats.stabBonus += platelegsSlot.stabBonus;
+            totalStats.crushBonus += platelegsSlot.crushBonus;
+            totalStats.slashBonus += platelegsSlot.slashBonus;
+        }
+
+        // Add stats from gloves
+        if (glovesSlot != null)
+        {
+            totalStats.stabBonus += glovesSlot.stabBonus;
+            totalStats.crushBonus += glovesSlot.crushBonus;
+            totalStats.slashBonus += glovesSlot.slashBonus;
+        }
+
+        // Add stats from boots
+        if (bootsSlot != null)
+        {
+            totalStats.stabBonus += bootsSlot.stabBonus;
+            totalStats.crushBonus += bootsSlot.crushBonus;
+            totalStats.slashBonus += bootsSlot.slashBonus;
+        }
+
+        // Add stats from weapon
+        if (weaponSlot != null)
+        {
+            totalStats.stabBonus += weaponSlot.stabBonus;
+            totalStats.crushBonus += weaponSlot.crushBonus;
+            totalStats.slashBonus += weaponSlot.slashBonus;
+        }
+
+        // ... (repeat for cape, amulet, etc., if applicable)
+
+        return totalStats;
+    }
+}
+using System.Collections.Generic;
+using UnityEngine;
+
+public class InventorySystem : MonoBehaviour
+{
+    [Header("Inventory Settings")]
+    public int maxInventorySlots = 28;
+    public int maxStackableQuantity = 100;
+
+    private List<Item> inventoryItems = new List<Item>();
+    private ItemDatabase itemDatabase;
+    private InventoryUIManager inventoryUIManager;
+
+    private void Start()
+    {
+        itemDatabase = ItemDatabase.Instance;
+        inventoryUIManager = GetComponent<InventoryUIManager>();
+    }
+
+    public void AddItemToInventory(int itemID, int quantity = 1)
+    {
+        Item itemToAdd = itemDatabase.GetItemByID(itemID);
+        if (itemToAdd == null)
+        {
+            Debug.LogWarning("Item with ID " + itemID + " does not exist in the database.");
+            return;
+        }
+
+        if (!itemToAdd.isStackable)
+        {
+            for (int i = 0; i < quantity; i++)
+            {
+                if (inventoryItems.Count >= maxInventorySlots)
+                {
+                    Debug.LogWarning("Inventory is full. Cannot add more items.");
+                    break;
+                }
+
+                inventoryItems.Add(new Item(itemToAdd));
+            }
+        }
+        else
+        {
+            Item stackableItem = inventoryItems.Find(item => item.itemID == itemID && item.quantity < maxStackableQuantity);
+            if (stackableItem != null)
+            {
+                int remainingSpace = maxStackableQuantity - stackableItem.quantity;
+                int quantityToAdd = Mathf.Min(remainingSpace, quantity);
+                stackableItem.quantity += quantityToAdd;
+                quantity -= quantityToAdd;
+            }
+
+            for (int i = 0; i < quantity; i++)
+            {
+                if (inventoryItems.Count >= maxInventorySlots)
+                {
+                    Debug.LogWarning("Inventory is full. Cannot add more items.");
+                    break;
+                }
+
+                Item newItem = new Item(itemToAdd);
+                newItem.quantity = Mathf.Min(quantity, maxStackableQuantity);
+                inventoryItems.Add(newItem);
+                quantity -= newItem.quantity;
+            }
+        }
+
+        // Update UI after adding items to inventory
+        UpdateInventoryUI();
+    }
+
+    public void RemoveItemFromInventory(int itemID, int quantity = 1)
+    {
+        Item itemToRemove = inventoryItems.Find(item => item.itemID == itemID);
+        if (itemToRemove == null)
+        {
+            Debug.LogWarning("Item with ID " + itemID + " not found in the inventory.");
+            return;
+        }
+
+        if (itemToRemove.isStackable)
+        {
+            itemToRemove.quantity -= quantity;
+            if (itemToRemove.quantity <= 0)
+            {
+                inventoryItems.Remove(itemToRemove);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < quantity; i++)
+            {
+                inventoryItems.Remove(itemToRemove);
+            }
+        }
+
+        // Update UI after removing items from inventory
+        UpdateInventoryUI();
+    }
+
+    public bool HasItemInInventory(int itemID)
+    {
+        return inventoryItems.Exists(item => item.itemID == itemID);
+    }
+
+    public List<Item> GetInventoryItems()
+    {
+        return inventoryItems;
+    }
+
+    public void ClearInventory()
+    {
+        inventoryItems.Clear();
+        // Update UI after clearing the inventory
+        UpdateInventoryUI();
+    }
+
+    private void UpdateInventoryUI()
+    {
+        inventoryUIManager.UpdateInventoryUI(inventoryItems);
+    }
+
+    public void UseItem(Item item)
+    {
+        // Implement item usage logic here
+        // For example, healing player's health if it's a health potion
+        Debug.Log("Using item: " + item.itemName);
+
+        // Update UI after using the item
+        UpdateInventoryUI();
+    }
+}
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class InventoryUIManager : MonoBehaviour
+{
+    [Header("Item Slot")]
+    public GameObject itemSlotPrefab; // Prefab of the item slot UI element
+    public Transform contentParent; // Parent transform for item slots in the inventory UI
+
+    private List<GameObject> itemSlots = new List<GameObject>();
+    private PlayerInventory playerInventory;
+
+    private void Start()
+    {
+        playerInventory = GetComponent<PlayerInventory>();
+        InitializeInventoryUI();
+    }
+
+    private void InitializeInventoryUI()
+    {
+        // Clear existing item slots
+        foreach (var slot in itemSlots)
+        {
+            Destroy(slot);
+        }
+        itemSlots.Clear();
+
+        // Instantiate item slots based on the number of inventory slots
+        for (int i = 0; i < playerInventory.maxInventorySlots; i++)
+        {
+            GameObject itemSlot = Instantiate(itemSlotPrefab, contentParent);
+            itemSlots.Add(itemSlot);
+        }
+
+        // Update inventory UI
+        UpdateInventoryUI(playerInventory.GetInventoryItems());
+    }
+
+    public void UpdateInventoryUI(List<Item> inventoryItems)
+    {
+        // Update each item slot with the corresponding item in the inventory
+        for (int i = 0; i < itemSlots.Count; i++)
+        {
+            Item item = (i < inventoryItems.Count) ? inventoryItems[i] : null;
+            UpdateItemSlotUI(item, itemSlots[i]);
+        }
+    }
+
+    private void UpdateItemSlotUI(Item item, GameObject itemSlot)
+    {
+        // Get references to UI elements in the item slot
+        Image iconImage = itemSlot.transform.Find("Icon").GetComponent<Image>();
+        Text nameText = itemSlot.transform.Find("Name").GetComponent<Text>();
+        Text quantityText = itemSlot.transform.Find("Quantity").GetComponent<Text>();
+
+        // Set the icon, name, and quantity for the item slot
+        if (item != null)
+        {
+            iconImage.sprite = item.icon;
+            nameText.text = item.itemName;
+            quantityText.text = (item.isStackable) ? item.quantity.ToString() : "";
+        }
+        else
+        {
+            // If the item is null (empty slot), clear the UI elements
+            iconImage.sprite = null;
+            nameText.text = "";
+            quantityText.text = "";
+        }
+    }
+
+    // Method to highlight an item slot when the player hovers over it
+    public void HighlightItemSlot(GameObject itemSlot)
+    {
+        // Implement highlighting behavior here (e.g., changing background color)
+    }
+
+    // Method to clear the item slot highlights
+    public void ClearItemSlotHighlights()
+    {
+        // Implement clearing of highlights here (e.g., reset background color)
+    }
+}
+using System.Collections.Generic;
+using UnityEngine;
+
+public enum ItemType
+{
+    Weapon,
+    Armor,
+    Consumable,
+    Resource,
+    // Add more item types as needed.
+}
+
+public enum GearSlot
+{
+    None,
+    Helmet,
+    Platebody,
+    Platelegs,
+    Gloves,
+    Boots,
+    Shield,
+    Cape,
+    Amulet,
+    // Add more gear slots as needed.
+}
+
+public enum ItemMaterial
+{
+    Wood,
+    Metal,
+    Cloth,
+    // Add more item materials as needed.
+}
+
+[System.Serializable]
+public class Item
+{
+    public int itemID; // Unique identifier for the item
+    public string itemName;
+    public string itemDescription;
+    public ItemType itemType;
+    public GearSlot gearSlot;
+    public int stabBonus;
+    public int slashBonus;
+    public int crushBonus;
+    public int magicBonus;
+    public int stabDefense;
+    public int slashDefense;
+    public int crushDefense;
+    public int magicDefense;
+    public float weight;
+    public int value;
+    public int requiredAttackLevel; // Optional for gear items.
+    public int requiredStrengthLevel; // Optional for gear items.
+    public int requiredDefenseLevel; // Optional for gear items.
+    public int requiredRangedLevel; // Optional for gear items.
+    public int requiredMagicLevel; // Optional for gear items.
+    public int requiredPrayerLevel; // Optional for gear items.
+    public int healthIncrease; // Optional for consumables (e.g., food).
+    public Sprite itemIcon; // The sprite for the item.
+
+    // Constructor to initialize item properties.
+    public Item(int id, string name, string description, ItemType type, GearSlot slot, int stabBonus, int slashBonus,
+                int crushBonus, int magicBonus, int stabDefense, int slashDefense, int crushDefense,
+                int magicDefense, float weight, int value, int reqAttackLevel, int reqStrengthLevel,
+                int reqDefenseLevel, int reqRangedLevel, int reqMagicLevel, int reqPrayerLevel,
+                int healthIncrease, Sprite icon)
+    {
+        itemID = id;
+        itemName = name;
+        itemDescription = description;
+        itemType = type;
+        gearSlot = slot;
+        this.stabBonus = stabBonus;
+        this.slashBonus = slashBonus;
+        this.crushBonus = crushBonus;
+        this.magicBonus = magicBonus;
+        this.stabDefense = stabDefense;
+        this.slashDefense = slashDefense;
+        this.crushDefense = crushDefense;
+        this.magicDefense = magicDefense;
+        this.weight = weight;
+        this.value = value;
+        requiredAttackLevel = reqAttackLevel;
+        requiredStrengthLevel = reqStrengthLevel;
+        requiredDefenseLevel = reqDefenseLevel;
+        requiredRangedLevel = reqRangedLevel;
+        requiredMagicLevel = reqMagicLevel;
+        requiredPrayerLevel = reqPrayerLevel;
+        this.healthIncrease = healthIncrease;
+        itemIcon = icon;
+    }
+
+    // Method to check if the item is stackable (can be stacked in inventory).
+    public bool IsStackable()
+    {
+        return itemType == ItemType.Consumable; // Add other types if stackable, as needed.
+    }
+
+    // Method to get a formatted item description with stats.
+    public string GetFormattedDescription()
+    {
+        string description = itemDescription;
+
+        // Add gear stats to the description.
+        if (itemType == ItemType.Weapon || itemType == ItemType.Armor)
+        {
+            description += "\n\nStats:\n";
+            description += "Attack: +" + stabBonus + " Stab, +" + slashBonus + " Slash, +" + crushBonus + " Crush, +" + magicBonus + " Magic\n";
+            description += "Defense: +" + stabDefense + " Stab, +" + slashDefense + " Slash, +" + crushDefense + " Crush, +" + magicDefense + " Magic\n";
+        }
+
+        // Add other specific item stats to the description, if needed.
+
+        return description;
+    }
+}
+using System.Collections.Generic;
+using UnityEngine;
+
+[System.Serializable]
+public class ItemDatabase : MonoBehaviour
+{
+    // List to hold all items in the game
+    public List<Item> allItems = new List<Item>();
+
+    // Singleton instance of the ItemDatabase
+    private static ItemDatabase instance;
+    public static ItemDatabase Instance
+    {
+        get
+        {
+            if (instance == null)
+            {
+                instance = FindObjectOfType<ItemDatabase>();
+                if (instance == null)
+                {
+                    GameObject obj = new GameObject("_ItemDatabase");
+                    instance = obj.AddComponent<ItemDatabase>();
+                }
+            }
+            return instance;
+        }
+    }
+
+    // Method to add an item to the database
+    public void AddItem(Item item)
+    {
+        if (item != null && !allItems.Contains(item))
+        {
+            allItems.Add(item);
+        }
+    }
+
+    // Method to get an item by its ID
+    public Item GetItemByID(int itemID)
+    {
+        return allItems.Find(item => item.itemID == itemID);
+    }
+
+    // Method to check if an item with the given ID exists in the database
+    public bool ItemExists(int itemID)
+    {
+        return allItems.Exists(item => item.itemID == itemID);
+    }
+
+    // Method to get a list of all items of a specific type
+    public List<Item> GetItemsByType(ItemType itemType)
+    {
+        return allItems.FindAll(item => item.itemType == itemType);
+    }
+
+    // Method to get a list of all items with a specific material
+    public List<Item> GetItemsByMaterial(ItemMaterial itemMaterial)
+    {
+        return allItems.FindAll(item => item.itemMaterial == itemMaterial);
+    }
+
+    // Method to get a list of all stackable items
+    public List<Item> GetStackableItems()
+    {
+        return allItems.FindAll(item => item.IsStackable());
+    }
+
+    // Method to get a list of all non-stackable items
+    public List<Item> GetNonStackableItems()
+    {
+        return allItems.FindAll(item => !item.IsStackable());
+    }
+}
+using System.Collections.Generic;
+using UnityEngine;
+
+public class LootTracker : MonoBehaviour
+{
+    [System.Serializable]
+    public class LootEntry
+    {
+        public int itemID;
+        public int quantity;
+    }
+
+    private List<LootEntry> lootEntries = new List<LootEntry>();
+
+    // Add loot to the tracker
+    public void AddLoot(int itemID, int quantity)
+    {
+        LootEntry existingEntry = lootEntries.Find(entry => entry.itemID == itemID);
+        if (existingEntry != null)
+        {
+            existingEntry.quantity += quantity;
+        }
+        else
+        {
+            LootEntry newEntry = new LootEntry { itemID = itemID, quantity = quantity };
+            lootEntries.Add(newEntry);
+        }
+    }
+
+    // Get the loot entries as a list
+    public List<LootEntry> GetLootEntries()
+    {
+        return lootEntries;
+    }
+
+    // Clear the loot entries
+    public void ClearLoot()
+    {
+        lootEntries.Clear();
+    }
+
+    // Display the loot information (for debugging purposes)
+    public void DisplayLoot()
+    {
+        foreach (LootEntry entry in lootEntries)
+        {
+            Debug.Log("Item ID: " + entry.itemID + ", Quantity: " + entry.quantity);
+        }
+    }
+}
+using UnityEngine;
+
+public class NPC : MonoBehaviour
+{
+    [Header("NPC Data")]
+    public NPCData npcData;
+
+    // Combat behavior
+    public void AttackPlayer(Player player)
+    {
+        // Calculate damage based on the NPC's attack bonuses and the player's defense bonuses
+        int damage = CalculateDamage(player.npcStabDefenseBonus, player.npcSlashDefenseBonus, player.npcCrushDefenseBonus);
+        player.TakeDamage(damage);
+    }
+
+    private int CalculateDamage(int playerStabDefenseBonus, int playerSlashDefenseBonus, int playerCrushDefenseBonus)
+    {
+        // Calculate damage based on the NPC's attack bonuses and the player's defense bonuses
+        int npcAttackBonus = Mathf.Max(npcData.npcStabAttackBonus, npcData.npcSlashAttackBonus, npcData.npcCrushAttackBonus); // Use the highest attack bonus
+        int playerDefenseBonus = Mathf.Max(playerStabDefenseBonus, playerSlashDefenseBonus, playerCrushDefenseBonus); // Use the highest defense bonus
+
+        int damage = Mathf.Max(1, npcAttackBonus - playerDefenseBonus); // Ensure damage is at least 1
+        return damage;
+    }
+
+    // Loot drop
+    public Item GetLootDrop()
+    {
+        // Randomly select an item from the loot table to drop
+        if (npcData.lootTable != null && npcData.lootTable.Count > 0)
+        {
+            int randomIndex = Random.Range(0, npcData.lootTable.Count);
+            return npcData.lootTable[randomIndex];
+        }
+        else
+        {
+            Debug.LogWarning("No loot table assigned to NPC: " + npcData.npcName);
+            return null;
+        }
+    }
+
+    // Unity integration (optional based on UI requirements)
+    // Add any Unity-specific functions and interactions here, such as displaying the NPC's name, health bar, etc.
+
+    // Example Unity-specific functions (replace with actual implementation)
+    private void OnMouseDown()
+    {
+        // Display NPC information when the player clicks on the NPC
+        Debug.Log("Clicked on NPC: " + npcData.npcName);
+    }
+
+    // Define the Player class within the same script (NPC.cs)
+    public class Player
+    {
+        // Add properties and methods for the Player class
+        // For example, you can include player stats and methods for taking damage, etc.
+        public int npcStabDefenseBonus;
+        public int npcSlashDefenseBonus;
+        public int npcCrushDefenseBonus;
+
+        public void TakeDamage(int damage)
+        {
+            // Implement the logic for the player taking damage
+            // You can access the Player's health and apply damage accordingly
+        }
+
+        // Add any other player-related methods or properties as needed
+    }
+}
+using UnityEngine;
+
+[System.Serializable]
+public class NPCData
+{
+    public string npcName;
+    public int npcStabAttackBonus;
+    public int npcSlashAttackBonus;
+    public int npcCrushAttackBonus;
+    public int npcStabDefenseBonus;
+    public int npcSlashDefenseBonus;
+    public int npcCrushDefenseBonus;
+    // Add any other properties and methods relevant to NPCs
+}
+using UnityEngine;
+
+public class PlayerCharacter : MonoBehaviour
+{
+    // Player attributes
+    public string playerName;
+    public int playerLevel = 1;
+    public int currentExperience;
+    public int requiredExperience;
+
+    // Combat stats
+    public CombatStats combatStats = new CombatStats();
+
+    // Inventory
+    public PlayerInventory playerInventory;
+
+    // Skills
+    public SkillSystem skillSystem;
+
+    // Health
+    public int maxHealth = 100;
+    public int currentHealth;
+
+    // Awake is called when the script instance is being loaded
+    private void Awake()
+    {
+        // Initialize the player's health
+        currentHealth = maxHealth;
+    }
+
+    // Update is called once per frame
+    private void Update()
+    {
+        // Check if the player has enough experience to level up
+        if (currentExperience >= requiredExperience)
+        {
+            LevelUp();
+        }
+    }
+
+    // Method to handle the player leveling up
+    private void LevelUp()
+    {
+        playerLevel++;
+        currentExperience -= requiredExperience;
+        // Increase requiredExperience for the next level, e.g., requiredExperience *= 2;
+        // Apply stat bonuses or unlock new abilities based on the player's level
+    }
+
+    // Method to handle the player taking damage
+    public void TakeDamage(int damage)
+    {
+        currentHealth -= damage;
+        if (currentHealth <= 0)
+        {
+            Die();
+        }
+    }
+
+    // Method to handle the player's death
+    private void Die()
+    {
+        // Perform actions when the player dies, e.g., respawn at a checkpoint
+    }
+
+    // Method to handle the player gaining experience
+    public void GainExperience(int experience)
+    {
+        currentExperience += experience;
+    }
+
+    // Method to update the player's combat stats based on equipped gear
+    public void UpdateCombatStats()
+    {
+        // Calculate total combat stats based on equipped gear and skills
+        CombatStats totalStats = new CombatStats();
+
+        // Add gear bonuses
+        GearSystem gearSystem = GetComponent<GearSystem>();
+        if (gearSystem != null)
+        {
+            totalStats = gearSystem.CalculateTotalStats();
+        }
+
+        // Add skill bonuses
+        if (skillSystem != null)
+        {
+            totalStats.stabBonus += skillSystem.GetSkillLevel(SkillType.Strength) / 2;
+            totalStats.slashBonus += skillSystem.GetSkillLevel(SkillType.Strength) / 2;
+            totalStats.crushBonus += skillSystem.GetSkillLevel(SkillType.Strength) / 2;
+            // Add more skill bonuses for different combat stats, as needed
+        }
+
+        // Assign the total combat stats to the player's combatStats
+        combatStats = totalStats;
+    }
+
+    // Method to handle the player attacking an NPC
+    public void AttackNPC(NPC npc)
+    {
+        // Calculate damage based on the player's attack bonuses and the NPC's defense bonuses
+        int damage = CalculateDamage(combatStats.stabBonus, combatStats.slashBonus, combatStats.crushBonus, npc.combatStats.stabDefense, npc.combatStats.slashDefense, npc.combatStats.crushDefense);
+        npc.TakeDamage(damage);
+    }
+
+    // Method to calculate damage between two entities
+    private int CalculateDamage(int playerStabBonus, int playerSlashBonus, int playerCrushBonus, int npcStabDefense, int npcSlashDefense, int npcCrushDefense)
+    {
+        // Calculate damage based on the player's attack bonuses and the NPC's defense bonuses
+        int npcDefense = Mathf.Max(npcStabDefense, npcSlashDefense, npcCrushDefense);
+        int playerAttack = Mathf.Max(playerStabBonus, playerSlashBonus, playerCrushBonus);
+
+        int damage = Mathf.Max(1, playerAttack - npcDefense); // Ensure damage is at least 1
+        return damage;
+    }
+}
+using System.Collections.Generic;
+using UnityEngine;
+
+public enum SkillType
+{
+    Attack,
+    Defense,
+    Prayer,
+    Hitpoints,
+    Range,
+    Magic,
+    Runecrafting
+    // Add more skills as needed
+}
+
+[System.Serializable]
+public class PlayerData
+{
+    // Player stats
+    public int playerId;
+    public string playerName;
+    public int playerLevel;
+    public int playerExperience;
+    public int playerGold;
+
+    // Player equipment
+    public int equippedWeaponId;
+    public int equippedArmorId;
+
+    // Player skills with their corresponding levels
+    public Dictionary<SkillType, int> playerSkills = new Dictionary<SkillType, int>();
+
+    // Constructor
+    public PlayerData()
+    {
+        // Initialize default values
+        playerId = 0;
+        playerName = "Player";
+        playerLevel = 1;
+        playerExperience = 0;
+        playerGold = 0;
+
+        // Initialize player skills
+        foreach (SkillType skillType in System.Enum.GetValues(typeof(SkillType)))
+        {
+            playerSkills.Add(skillType, 1);
+        }
+    }
+
+    // Helper method to increase player level
+    public void IncreasePlayerLevel()
+    {
+        playerLevel++;
+    }
+
+    // Helper method to increase player experience
+    public void IncreasePlayerExperience(int amount)
+    {
+        playerExperience += amount;
+
+        // Check if player has leveled up
+        while (playerExperience >= ExperienceToNextLevel())
+        {
+            playerExperience -= ExperienceToNextLevel();
+            IncreasePlayerLevel();
+        }
+    }
+
+    // Helper method to calculate experience required for the next level
+    public int ExperienceToNextLevel()
+    {
+        return playerLevel * 100; // Adjust as needed for your leveling system
+    }
+
+    // Helper method to increase a specific skill level
+    public void IncreaseSkillLevel(SkillType skillType, int amount)
+    {
+        playerSkills[skillType] += amount;
+    }
+
+    // Helper method to get the level of a specific skill
+    public int GetSkillLevel(SkillType skillType)
+    {
+        if (playerSkills.ContainsKey(skillType))
+        {
+            return playerSkills[skillType];
+        }
+
+        return 1;
+    }
+
+    // Helper method to set the player's name
+    public void SetPlayerName(string name)
+    {
+        playerName = name;
+    }
+
+    // Helper method to add gold to the player's inventory
+    public void AddGold(int amount)
+    {
+        playerGold += amount;
+    }
+
+    // Helper method to remove gold from the player's inventory
+    public void RemoveGold(int amount)
+    {
+        playerGold -= amount;
+        if (playerGold < 0)
+        {
+            playerGold = 0;
+        }
+    }
+
+    // ... (Add more helper methods as needed)
+
+}
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class PlayerInventory : MonoBehaviour
+{
+    [Header("Inventory Settings")]
+    public int maxInventorySlots = 28;
+    public int maxStackableQuantity = 100;
+
+    [Header("UI Settings")]
+    public GameObject inventoryUI; // Reference to the inventory UI game object
+    public Transform itemSlotParent; // Parent transform for item slots in the UI
+
+    private List<Item> inventoryItems = new List<Item>();
+    private ItemDatabase itemDatabase;
+    private InventoryUIManager inventoryUIManager;
+
+    private void Start()
+    {
+        itemDatabase = ItemDatabase.Instance;
+        inventoryUIManager = inventoryUI.GetComponent<InventoryUIManager>();
+        UpdateInventoryUI();
+    }
+
+    public void AddItemToInventory(int itemID, int quantity = 1)
+    {
+        Item itemToAdd = itemDatabase.GetItemByID(itemID);
+        if (itemToAdd == null)
+        {
+            Debug.LogWarning("Item with ID " + itemID + " does not exist in the database.");
+            return;
+        }
+
+        if (!itemToAdd.isStackable)
+        {
+            for (int i = 0; i < quantity; i++)
+            {
+                if (inventoryItems.Count >= maxInventorySlots)
+                {
+                    Debug.LogWarning("Inventory is full. Cannot add more items.");
+                    break;
+                }
+
+                inventoryItems.Add(itemToAdd);
+            }
+        }
+        else
+        {
+            Item stackableItem = inventoryItems.Find(item => item.itemID == itemID && item.quantity < maxStackableQuantity);
+            if (stackableItem != null)
+            {
+                int remainingSpace = maxStackableQuantity - stackableItem.quantity;
+                int quantityToAdd = Mathf.Min(remainingSpace, quantity);
+                stackableItem.quantity += quantityToAdd;
+                quantity -= quantityToAdd;
+            }
+
+            for (int i = 0; i < quantity; i++)
+            {
+                if (inventoryItems.Count >= maxInventorySlots)
+                {
+                    Debug.LogWarning("Inventory is full. Cannot add more items.");
+                    break;
+                }
+
+                Item newItem = new Item(itemToAdd);
+                newItem.quantity = Mathf.Min(quantity, maxStackableQuantity);
+                inventoryItems.Add(newItem);
+                quantity -= newItem.quantity;
+            }
+        }
+
+        // Update UI after adding items to inventory
+        UpdateInventoryUI();
+    }
+
+    public void RemoveItemFromInventory(int itemID, int quantity = 1)
+    {
+        Item itemToRemove = inventoryItems.Find(item => item.itemID == itemID);
+        if (itemToRemove == null)
+        {
+            Debug.LogWarning("Item with ID " + itemID + " not found in the inventory.");
+            return;
+        }
+
+        if (itemToRemove.isStackable)
+        {
+            itemToRemove.quantity -= quantity;
+            if (itemToRemove.quantity <= 0)
+            {
+                inventoryItems.Remove(itemToRemove);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < quantity; i++)
+            {
+                inventoryItems.Remove(itemToRemove);
+            }
+        }
+
+        // Update UI after removing items from inventory
+        UpdateInventoryUI();
+    }
+
+    public bool HasItemInInventory(int itemID)
+    {
+        return inventoryItems.Exists(item => item.itemID == itemID);
+    }
+
+    public List<Item> GetInventoryItems()
+    {
+        return inventoryItems;
+    }
+
+    public void ClearInventory()
+    {
+        inventoryItems.Clear();
+        // Update UI after clearing the inventory
+        UpdateInventoryUI();
+    }
+
+    private void UpdateInventoryUI()
+    {
+        inventoryUIManager.UpdateInventoryUI(inventoryItems, itemSlotParent);
+    }
+}
+using System.Collections.Generic;
+using UnityEngine;
+
+[System.Serializable]
+public class QuestData
+{
+    public int questID;
+    public string questName;
+    public string questDescription;
+    public bool isCompleted;
+    public Dictionary<int, int> questObjectives;
+
+    public QuestData(int id, string name, string description)
+    {
+        questID = id;
+        questName = name;
+        questDescription = description;
+        isCompleted = false;
+        questObjectives = new Dictionary<int, int>();
+    }
+}
+
+[System.Serializable]
+public class QuestPlayerData
+{
+    // Player Attributes
+    public string playerName;
+    public int playerLevel;
+    public int playerXP;
+    public int playerMaxHealth;
+    public int playerCurrentHealth;
+    public int playerAttack;
+    public int playerDefense;
+    public int playerPrayer;
+
+    // Player Inventory
+    public List<Item> inventoryItems;
+
+    // Player Gear
+    public Item helmetSlot;
+    public Item platebodySlot;
+    public Item platelegsSlot;
+    public Item glovesSlot;
+    public Item bootsSlot;
+    public Item capeSlot;
+    public Item amuletSlot;
+    public Item weaponSlot;
+
+    // Completed Quests
+    public List<QuestData> completedQuests;
+
+    // Constructor
+    public QuestPlayerData()
+    {
+        playerName = "";
+        playerLevel = 1;
+        playerXP = 0;
+        playerMaxHealth = 10;
+        playerCurrentHealth = playerMaxHealth;
+        playerAttack = 1;
+        playerDefense = 1;
+        playerPrayer = 1;
+
+        inventoryItems = new List<Item>();
+
+        helmetSlot = null;
+        platebodySlot = null;
+        platelegsSlot = null;
+        glovesSlot = null;
+        bootsSlot = null;
+        capeSlot = null;
+        amuletSlot = null;
+        weaponSlot = null;
+
+        completedQuests = new List<QuestData>();
+    }
+
+    // Add methods or properties related to player data if needed
+}
+using System.Collections.Generic;
+using UnityEngine;
+
+public class QuestSystem : MonoBehaviour
+{
+    public List<Quest> quests = new List<Quest>();
+
+    public void StartQuest(Quest quest, PlayerData playerData)
+    {
+        if (!quest.IsCompleted && quest.CanStartQuest(playerData))
+        {
+            quest.StartQuest(playerData);
+            Debug.Log("Quest started: " + quest.questName);
+        }
+    }
+
+    public void CompleteQuest(Quest quest)
+    {
+        if (!quest.IsCompleted)
+        {
+            quest.CompleteQuest();
+            // Add any rewards or other actions upon quest completion here
+            Debug.Log("Quest completed: " + quest.questName);
+        }
+    }
+}
+
+[System.Serializable]
+public class Quest
+{
+    public string questName;
+    public string questDescription;
+    public bool IsCompleted { get; private set; }
+    public int requiredLevel;
+    public int requiredSkillLevel;
+    public List<Item> requiredItems;
+    public List<Item> questRewards;
+
+    // Add any other properties you need for the quest, such as objectives, dialogue, etc.
+
+    public bool CanStartQuest(PlayerData playerData)
+    {
+        if (playerData.level >= requiredLevel && playerData.GetSkillLevel(SkillType.Runecrafting) >= requiredSkillLevel)
+        {
+            foreach (Item item in requiredItems)
+            {
+                if (!playerData.HasItem(item))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    public void StartQuest(PlayerData playerData)
+    {
+        foreach (Item item in requiredItems)
+        {
+            playerData.RemoveItem(item);
+        }
+        IsCompleted = false;
+        // Add any other actions needed to start the quest here
+    }
+
+    public void CompleteQuest()
+    {
+        IsCompleted = true;
+        // Add any other actions needed upon quest completion here
+    }
+
+    public void GiveRewards(PlayerData playerData)
+    {
+        foreach (Item item in questRewards)
+        {
+            playerData.AddItem(item);
+        }
+        // Add any other actions needed to give rewards to the player here
+    }
+}
+using UnityEngine;
+
+public class SaveLoadManager : MonoBehaviour
+{
+    // Save player data to PlayerPrefs
+    public void Save(PlayerData playerData)
+    {
+        // Save player data using PlayerPrefs keys
+        PlayerPrefs.SetString("PlayerName", playerData.playerName);
+        PlayerPrefs.SetInt("PlayerLevel", playerData.playerLevel);
+
+        // Save other player data here...
+
+        // Save player inventory
+        SaveInventory(playerData.inventory);
+
+        // Save player gear
+        SaveGear(playerData.gear);
+
+        // Save player quest data
+        SaveQuestData(playerData.quests);
+
+        // Save other data as needed...
+    }
+
+    // Load player data from PlayerPrefs
+    public void Load(PlayerData playerData)
+    {
+        // Load player data using PlayerPrefs keys
+        playerData.playerName = PlayerPrefs.GetString("PlayerName");
+        playerData.playerLevel = PlayerPrefs.GetInt("PlayerLevel");
+
+        // Load other player data here...
+
+        // Load player inventory
+        LoadInventory(playerData.inventory);
+
+        // Load player gear
+        LoadGear(playerData.gear);
+
+        // Load player quest data
+        LoadQuestData(playerData.quests);
+
+        // Load other data as needed...
+    }
+
+    // Save loot tracker data to PlayerPrefs
+    private void SaveLootTracker(LootTracker lootTracker)
+    {
+        // Save loot tracker data here...
+    }
+
+    // Load loot tracker data from PlayerPrefs
+    private void LoadLootTracker(LootTracker lootTracker)
+    {
+        // Load loot tracker data here...
+    }
+    // Save player inventory data to PlayerPrefs
+    private void SaveInventory(PlayerInventory inventory)
+    {
+        // Save inventory items here...
+    }
+
+    // Load player inventory data from PlayerPrefs
+    private void LoadInventory(PlayerInventory inventory)
+    {
+        // Load inventory items here...
+    }
+
+    // Save player gear data to PlayerPrefs
+    private void SaveGear(GearSystem gear)
+    {
+        // Save gear items here...
+    }
+
+    // Load player gear data from PlayerPrefs
+    private void LoadGear(GearSystem gear)
+    {
+        // Load gear items here...
+    }
+
+    // Save player quest data to PlayerPrefs
+    private void SaveQuestData(QuestSystem questSystem)
+    {
+        // Save quest data here...
+    }
+
+    // Load player quest data from PlayerPrefs
+    private void LoadQuestData(QuestSystem questSystem)
+    {
+        // Load quest data here...
+    }
+
+    // Clear saved player data
+    public void ClearSave()
+    {
+        PlayerPrefs.DeleteAll();
+    }
+}
+using UnityEngine;
+using System.Collections.Generic;
+
+
+public class SkillSystem : MonoBehaviour
+{
+    // Define the maximum skill level (99 for Runescape 2007)
+    private const int maxSkillLevel = 99;
+
+    // Enum to represent different skills
+    public enum SkillType
+    {
+        Attack,
+        Strength,
+        Defense,
+        Mining,
+        Fishing,
+        Cooking,
+        Runecrafting,
+        // Add more skills as needed
+    }
+
+    // Dictionary to store the current level and XP of each skill
+    private Dictionary<SkillType, int> skillLevels;
+    private Dictionary<SkillType, int> skillXP;
+
+    // Method to initialize the skill system (called at the start of the game)
+    public void InitializeSkills()
+    {
+        skillLevels = new Dictionary<SkillType, int>();
+        skillXP = new Dictionary<SkillType, int>();
+
+        // Initialize all skills to level 1 and XP 0
+        foreach (SkillType skill in Enum.GetValues(typeof(SkillType)))
+        {
+            skillLevels[skill] = 1;
+            skillXP[skill] = 0;
+        }
+    }
+
+    // Method to gain XP in a skill
+    public void GainXP(SkillType skill, int xpAmount)
+    {
+        // Check if the skill is already at the maximum level
+        if (skillLevels[skill] >= maxSkillLevel)
+            return;
+
+        // Add the XP amount to the skill's XP
+        skillXP[skill] += xpAmount;
+
+        // Check if the skill's XP is enough to level up
+        while (skillXP[skill] >= GetRequiredXPForLevel(skillLevels[skill] + 1))
+        {
+            LevelUpSkill(skill);
+        }
+    }
+
+    // Method to calculate the required XP to reach a certain level
+    private int GetRequiredXPForLevel(int level)
+    {
+        // Use the Runescape 2007 formula to calculate required XP
+        return Mathf.FloorToInt((4 * Mathf.Pow(level, 3)) / 5);
+    }
+
+    // Method to level up a skill
+    private void LevelUpSkill(SkillType skill)
+    {
+        // Increase the skill level by 1 and reset the XP
+        skillLevels[skill]++;
+        skillXP[skill] = 0;
+
+        // TODO: Apply any stat changes or unlock new content related to leveling up the skill
+    }
+
+    // TODO: Add other methods for skill training, checking skill requirements, etc.
+
+    // Method to save skill data to the save file
+    public void SaveSkillData()
+    {
+        // TODO: Save skillLevels and skillXP dictionaries to the save file
+    }
+
+    // Method to load skill data from the save file
+    public void LoadSkillData()
+    {
+        // TODO: Load skillLevels and skillXP dictionaries from the save file
+    }
+}
+using UnityEngine;
+using UnityEngine.UI;
+using System.Collections.Generic;
+
+public class UIManager : MonoBehaviour
+{
+    [Header("UI Text Elements")]
+    public Text healthText;
+    public Text combatLevelText;
+    public Text attackText;
+    public Text strengthText;
+    public Text defenseText;
+    public Text rangedText;
+    public Text magicText;
+    public Text runecraftingText;
+    public Text lootTrackerText;
+    public GameObject lootTrackerPanel;
+    public GameObject questPanel;
+    public Text questTitleText;
+    public Text questDescriptionText;
+    public Text questProgressText;
+
+    private PlayerData playerData;
+    private bool isLootTrackerVisible;
+    private bool isQuestPanelVisible;
+
+    private void Start()
+    {
+        playerData = FindObjectOfType<PlayerData>();
+        isLootTrackerVisible = false;
+        isQuestPanelVisible = false;
+        UpdateUI();
+    }
+
+    private void Update()
+    {
+        // Update the UI elements that need constant monitoring (e.g., health, combat level, skills)
+        UpdateHealthText();
+        UpdateCombatLevelText();
+        UpdateSkillText();
+
+        // Check for loot changes and update the loot tracker
+        if (playerData.IsLootUpdated())
+        {
+            UpdateLootTracker();
+            playerData.ResetLootUpdated();
+        }
+
+        // Check for active quests and update the quest panel if needed
+        if (playerData.IsQuestUpdated())
+        {
+            UpdateQuestPanel();
+            playerData.ResetQuestUpdated();
+        }
+    }
+
+    private void UpdateHealthText()
+    {
+        healthText.text = "Health: " + playerData.GetCurrentHealth() + "/" + playerData.GetMaxHealth();
+    }
+
+    private void UpdateCombatLevelText()
+    {
+        combatLevelText.text = "Combat Level: " + playerData.GetCombatLevel();
+    }
+
+    private void UpdateSkillText()
+    {
+        attackText.text = "Attack: " + playerData.GetSkillLevel(SkillType.Attack);
+        strengthText.text = "Strength: " + playerData.GetSkillLevel(SkillType.Strength);
+        defenseText.text = "Defense: " + playerData.GetSkillLevel(SkillType.Defense);
+        rangedText.text = "Ranged: " + playerData.GetSkillLevel(SkillType.Ranged);
+        magicText.text = "Magic: " + playerData.GetSkillLevel(SkillType.Magic);
+        runecraftingText.text = "Runecrafting: " + playerData.GetSkillLevel(SkillType.Runecrafting);
+    }
+
+    private void UpdateLootTracker()
+    {
+        if (isLootTrackerVisible)
+        {
+            string lootText = "Loot Tracker:\n";
+
+            foreach (var loot in playerData.GetLootTracker())
+            {
+                lootText += loot.itemName + " x " + loot.quantity + "\n";
+            }
+
+            lootTrackerText.text = lootText;
+        }
+    }
+
+    private void UpdateQuestPanel()
+    {
+        Quest activeQuest = playerData.GetActiveQuest();
+
+        if (activeQuest != null)
+        {
+            if (!isQuestPanelVisible)
+            {
+                questPanel.SetActive(true);
+                isQuestPanelVisible = true;
+            }
+
+            questTitleText.text = activeQuest.title;
+            questDescriptionText.text = activeQuest.description;
+            questProgressText.text = "Progress: " + activeQuest.progress + "/" + activeQuest.goal;
+        }
+        else if (isQuestPanelVisible)
+        {
+            questPanel.SetActive(false);
+            isQuestPanelVisible = false;
+        }
+    }
+
+    public void ToggleLootTrackerPanel()
+    {
+        isLootTrackerVisible = !isLootTrackerVisible;
+        lootTrackerPanel.SetActive(isLootTrackerVisible);
+        UpdateLootTracker();
+    }
+
+    public void ToggleQuestPanel()
+    {
+        isQuestPanelVisible = !isQuestPanelVisible;
+        questPanel.SetActive(isQuestPanelVisible);
+        UpdateQuestPanel();
+    }
+}
+(Please review the code for any compilation errors, remove any unnecessary scripts, and ensure that all the remaining code works together cohesively without losing any information.)
